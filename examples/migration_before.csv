@@ -1,0 +1,4 @@
+sample_id,concentration,unit,analyzed_at
+SMP-000001,12.5,mg/L,2026-09-01
+SMP-000002,0.10,mg/L,2026-09-01
+SMP-000003,4.7,mg/L,2026-09-02
