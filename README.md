@@ -118,6 +118,30 @@ Or drop it into GitHub Actions with the bundled `action.yml`:
     report: report.json
 ```
 
+## Compare two exports
+
+Moving to a new LIMS, or checking that a loaded table matches the source extract? Diff two files row by row, aligned on a key column:
+
+```bash
+lims-dq compare migration_before.csv migration_after.csv --key sample_id
+```
+
+Sample output:
+
+```
+differences between migration_before.csv and migration_after.csv (key column 'sample_id'):
+  rows only in migration_before.csv: SMP-000003
+  rows only in migration_after.csv: SMP-000004
+  row SMP-000002: column 'concentration': '0.10' -> '0.1000001'
+3 difference(s) across 2 matched rows (1 identical)
+```
+
+- `--tolerance` treats tiny numeric drift (rounding between systems) as identical: `--tolerance 0.001` makes `0.10` and `0.1000001` match.
+- Duplicate keys in either file are rejected (exit 2): a key must identify one row.
+- `--report` writes the full diff as JSON; `--max-diffs N` tolerates up to N differences; `--quiet` suppresses console output.
+
+Exit codes: `0` = identical, `1` = differences found, `2` = usage/file errors.
+
 ## Schema reference
 
 | Key        | Applies to        | Meaning                                          |
