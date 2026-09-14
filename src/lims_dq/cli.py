@@ -17,6 +17,7 @@ import pandas as pd
 from . import __version__
 from .audit import build_entry, write_audit_log
 from .censored import collect_censored
+from .compare import CompareError, compare_dataframes
 from .infer import infer_schema
 from .report import ErrorReport
 from .schema import SchemaError, load_schema
@@ -96,6 +97,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     infer.add_argument(
         "--name", default="inferred", help="Schema name (default: inferred)"
+    )
+
+    compare = sub.add_parser(
+        "compare", help="Row-level diff of two data exports (migration/ETL parity)."
+    )
+    compare.add_argument("before_file", help="Baseline CSV or Excel file")
+    compare.add_argument("after_file", help="New CSV or Excel file")
+    compare.add_argument(
+        "--key",
+        required=True,
+        help="Column used to align rows (e.g. sample_id)",
+    )
+    compare.add_argument(
+        "--report",
+        default=None,
+        help="Write the comparison as JSON to this path",
+    )
+    compare.add_argument(
+        "--tolerance",
+        type=float,
+        default=0.0,
+        help="Numeric tolerance for cell comparison (default: 0)",
+    )
+    compare.add_argument(
+        "--max-diffs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Exit 0 if the difference count is at most N",
+    )
+    compare.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the console report; the exit code (and --report, "
+        "if given) still carries the result",
     )
     return parser
 
@@ -187,6 +223,57 @@ def cmd_infer(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Diff two exports row by row. Exit 0 = identical, 1 = differences,
+    2 = usage or file errors. ``--max-diffs N`` tolerates up to N diffs."""
+    before_path = Path(args.before_file)
+    after_path = Path(args.after_file)
+    for path in (before_path, after_path):
+        if not path.is_file():
+            print(f"error: data file not found: {path}", file=sys.stderr)
+            return 2
+    if args.tolerance < 0:
+        print("error: --tolerance must be >= 0", file=sys.stderr)
+        return 2
+    try:
+        before_df = load_data_file(before_path)
+        after_df = load_data_file(after_path)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # unreadable file, bad encoding, ...
+        print(f"error: could not read input: {exc}", file=sys.stderr)
+        return 2
+    try:
+        result = compare_dataframes(
+            before_df,
+            after_df,
+            key=args.key,
+            before_name=before_path.name,
+            after_name=after_path.name,
+            tolerance=args.tolerance,
+        )
+    except CompareError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.quiet:
+        print(result.to_text())
+    if args.report:
+        Path(args.report).write_text(
+            json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8"
+        )
+        if not args.quiet:
+            print(f"\ncomparison written to {args.report}")
+
+    if args.max_diffs is not None:
+        if args.max_diffs < 0:
+            print("error: --max-diffs must be >= 0", file=sys.stderr)
+            return 2
+        return 0 if result.diff_count <= args.max_diffs else 1
+    return 0 if result.identical else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -194,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_validate(args)
     if args.command == "infer":
         return cmd_infer(args)
+    if args.command == "compare":
+        return cmd_compare(args)
     parser.error(f"unknown command {args.command!r}")
     return 2  # unreachable
 
