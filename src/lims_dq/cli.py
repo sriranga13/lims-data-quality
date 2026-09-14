@@ -2,11 +2,13 @@
 
 Exit codes: 0 = all rows pass, 1 = validation failures found,
 2 = usage or file errors (missing file, bad schema, unreadable data).
+``--max-errors N`` tolerates up to N errors and still exits 0.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -14,6 +16,8 @@ import pandas as pd
 
 from . import __version__
 from .audit import build_entry, write_audit_log
+from .censored import collect_censored
+from .infer import infer_schema
 from .report import ErrorReport
 from .schema import SchemaError, load_schema
 from .validators import validate_dataframe
@@ -66,6 +70,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not flag columns missing from the schema",
     )
+    validate.add_argument(
+        "--max-errors",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Exit 0 if the error count is at most N (for CI pipelines "
+        "that tolerate a few bad rows)",
+    )
+    validate.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress the console report; the exit code (and --report / "
+        "--audit-log files, if given) still carry the result",
+    )
+
+    infer = sub.add_parser(
+        "infer", help="Generate a starter schema from a data file."
+    )
+    infer.add_argument("data_file", help="CSV or Excel file to inspect")
+    infer.add_argument(
+        "--out",
+        default=None,
+        help="Write the schema JSON to this path (default: print to stdout)",
+    )
+    infer.add_argument(
+        "--name", default="inferred", help="Schema name (default: inferred)"
+    )
     return parser
 
 
@@ -89,18 +120,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 2
 
     errors = validate_dataframe(df, ruleset, strict=not args.no_strict)
+    censored = collect_censored(df, ruleset)
     report = ErrorReport(
         filename=data_path.name,
         ruleset_name=ruleset.name,
         ruleset_version=ruleset.version,
         rows_checked=len(df),
         errors=errors,
+        censored=censored,
     )
-    print(report.to_text())
+    if not args.quiet:
+        print(report.to_text())
 
     if args.report:
         Path(args.report).write_text(report.to_json() + "\n", encoding="utf-8")
-        print(f"\nJSON report written to {args.report}")
+        if not args.quiet:
+            print(f"\nJSON report written to {args.report}")
 
     if args.audit_log:
         entry = build_entry(
@@ -113,9 +148,43 @@ def cmd_validate(args: argparse.Namespace) -> int:
             error_count=len(errors),
         )
         write_audit_log(entry, args.audit_log)
-        print(f"audit entry appended to {args.audit_log}")
+        if not args.quiet:
+            print(f"audit entry appended to {args.audit_log}")
 
+    if args.max_errors is not None:
+        if args.max_errors < 0:
+            print("error: --max-errors must be >= 0", file=sys.stderr)
+            return 2
+        return 0 if len(errors) <= args.max_errors else 1
     return 0 if report.passed else 1
+
+
+def cmd_infer(args: argparse.Namespace) -> int:
+    data_path = Path(args.data_file)
+    if not data_path.is_file():
+        print(f"error: data file not found: {data_path}", file=sys.stderr)
+        return 2
+    try:
+        df = load_data_file(data_path)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # unreadable file, bad encoding, ...
+        print(f"error: could not read {data_path}: {exc}", file=sys.stderr)
+        return 2
+    try:
+        document = infer_schema(df, name=args.name)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    text = json.dumps(document, indent=2) + "\n"
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"schema written to {args.out} -- review and tighten it before use")
+    else:
+        print(text, end="")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "validate":
         return cmd_validate(args)
+    if args.command == "infer":
+        return cmd_infer(args)
     parser.error(f"unknown command {args.command!r}")
     return 2  # unreachable
 

@@ -76,6 +76,48 @@ lims-dq validate samples.csv --schema schema.json \
 
 Exit codes: `0` = all rows pass, `1` = validation failures, `2` = usage/file errors.
 
+## Generate a starter schema
+
+Don't want to hand-write `schema.json`? Infer one from the data:
+
+```bash
+lims-dq infer samples.csv --out schema.json
+```
+
+This inspects each column and proposes dtypes, required flags, observed min/max, and allowed-value lists for categorical columns. Columns that mix numbers with detection-limit values (see below) are inferred as numeric with `allow_censored` already set. **Always review and tighten the result** — inferred ranges describe your sample, not your spec.
+
+## Detection-limit values
+
+Lab exports are full of `<0.01`, `ND`, `BQL`, `TNTC` — meaningful results, not malformed data. Opt a numeric column in:
+
+```json
+{ "concentration": { "dtype": "float", "required": true, "allow_censored": true } }
+```
+
+Censored values then pass validation and are counted in the report (`censored values accepted: N`, with per-row detail in `--report` JSON) instead of failing as "not a number". Recognized forms: `<`, `<=`, `>`, `>=` thresholds and the qualifiers ND, BQL/BLOQ, AQL/ALOQ, LOD, TNTC/TFTC.
+
+## CI mode and GitHub Action
+
+Gate your pipeline on data quality. Tolerate a few bad rows without failing the build:
+
+```bash
+lims-dq validate drop.csv --schema schema.json --max-errors 5 --quiet
+```
+
+- `--max-errors N` exits 0 when the error count is at most N.
+- `--quiet` suppresses console output (the exit code and any `--report`/`--audit-log` files still carry the result).
+
+Or drop it into GitHub Actions with the bundled `action.yml`:
+
+```yaml
+- uses: sriranga13/lims-data-quality@v0.2.0
+  with:
+    data-file: data/drop.csv
+    schema: schemas/drop.json
+    max-errors: "5"
+    report: report.json
+```
+
 ## Schema reference
 
 | Key        | Applies to        | Meaning                                          |
@@ -85,6 +127,7 @@ Exit codes: `0` = all rows pass, `1` = validation failures, `2` = usage/file err
 | `pattern`  | all               | regex the full value must match                  |
 | `min`/`max`| `int`, `float`    | inclusive numeric bounds                          |
 | `allowed`  | all               | value must be one of the listed strings          |
+| `allow_censored` | `int`, `float` | accept detection-limit values (`<0.01`, `ND`, …) |
 
 Columns present in the file but absent from the schema are flagged as `unexpected_column` errors unless you pass `--no-strict`.
 

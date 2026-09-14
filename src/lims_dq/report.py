@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from .censored import CensoredHit
 
 
 @dataclass
@@ -36,6 +38,7 @@ class ErrorReport:
     ruleset_version: str
     rows_checked: int
     errors: list[ValidationError]
+    censored: list[CensoredHit] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -61,8 +64,11 @@ class ErrorReport:
                 "error_count": len(self.errors),
                 "errors_by_rule": dict(Counter(e.rule for e in self.errors)),
                 "errors_by_column": dict(Counter(e.column for e in self.errors)),
+                "censored_count": len(self.censored),
+                "censored_by_column": dict(Counter(h.column for h in self.censored)),
             },
             "errors": [e.to_dict() for e in self.errors],
+            "censored": [h.to_dict() for h in self.censored],
         }
 
     def to_json(self, *, indent: int = 2) -> str:
@@ -76,6 +82,8 @@ class ErrorReport:
             f"passed: {self.rows_passed} | failed: {self.rows_failed} | "
             f"errors: {len(self.errors)}",
         ]
+        if self.censored:
+            lines.append(f"censored values accepted: {len(self.censored)}")
         if self.passed:
             lines.append("PASS: all rows satisfy the schema.")
             return "\n".join(lines)

@@ -1,0 +1,41 @@
+name: "lims-dq validate"
+description: "Validate a lab/LIMS data file against a schema with lims-dq"
+author: "Sri Gorantla"
+
+inputs:
+  data-file:
+    description: "Path to the CSV or Excel file to validate"
+    required: true
+  schema:
+    description: "Path to the schema JSON file"
+    required: true
+  max-errors:
+    description: "Tolerate up to this many errors and still pass"
+    required: false
+    default: "0"
+  report:
+    description: "Write the JSON error report to this path"
+    required: false
+    default: ""
+  version:
+    description: "lims-data-quality version to install from PyPI"
+    required: false
+    default: "0.2.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install lims-dq
+      run: pip install "lims-data-quality==${{ inputs.version }}"
+      shell: bash
+    - name: Validate data file
+      run: >
+        lims-dq validate "${{ inputs.data-file }}"
+        --schema "${{ inputs.schema }}"
+        --max-errors "${{ inputs.max-errors }}"
+        ${{ inputs.report != '' && format('--report {0}', inputs.report) || '' }}
+      shell: bash
+
+branding:
+  icon: "check-circle"
+  color: "green"

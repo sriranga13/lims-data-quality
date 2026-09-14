@@ -138,3 +138,49 @@ def test_row_numbering_is_one_based():
     assert isinstance(err, ValidationError)
     assert err.row == 2
     assert err.column == "unit"
+
+
+def make_censored_ruleset():
+    rules = {
+        "concentration": Rule(
+            name="concentration", dtype="float", required=True, allow_censored=True
+        ),
+    }
+    return RuleSet(name="t", version="1.0", rules=rules)
+
+
+def test_censored_values_accepted_when_allowed():
+    df = pd.DataFrame({"concentration": ["12.5", "<0.01", "ND", "BQL"]})
+    assert validate_dataframe(df, make_censored_ruleset(), strict=False) == []
+
+
+def test_censored_values_rejected_when_not_allowed():
+    df = pd.DataFrame({"concentration": ["12.5", "<0.01"]})
+    rules = {
+        "concentration": Rule(name="concentration", dtype="float", required=True),
+    }
+    errs = validate_dataframe(df, RuleSet(name="t", version="1.0", rules=rules),
+                              strict=False)
+    assert len(errs) == 1
+    assert errs[0].row == 2
+    assert errs[0].rule == "dtype"
+    assert "allow_censored" in errs[0].message
+
+
+def test_collect_censored_hits():
+    from lims_dq.censored import collect_censored
+
+    df = pd.DataFrame({"concentration": ["12.5", "<0.01", "ND"]})
+    hits = collect_censored(df, make_censored_ruleset())
+    assert [(h.row, h.kind) for h in hits] == [(2, "below"), (3, "not_detected")]
+    assert hits[0].limit == 0.01
+
+
+def test_collect_censored_ignores_other_columns():
+    from lims_dq.censored import collect_censored
+
+    df = pd.DataFrame({"concentration": ["<0.01"], "unit": ["mg/L"]})
+    assert collect_censored(df, make_censored_ruleset()) != []
+    # unit column has no allow_censored: nothing collected from it either way
+    assert all(h.column == "concentration" for h in
+               collect_censored(df, make_censored_ruleset()))

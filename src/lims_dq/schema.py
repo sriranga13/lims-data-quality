@@ -18,7 +18,9 @@ A schema is a JSON document describing the columns a data file must have::
 
 Supported dtypes: ``string``, ``int``, ``float``, ``date``.
 Supported constraints: ``required``, ``pattern`` (regex, full match),
-``min``/``max`` (numeric dtypes only), ``allowed`` (enumerated values).
+``min``/``max`` (numeric dtypes only), ``allowed`` (enumerated values),
+``allow_censored`` (accept detection-limit values like ``<0.01`` or
+``ND`` in numeric columns; see :mod:`lims_dq.censored`).
 """
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ class Rule:
     min: float | None = None
     max: float | None = None
     allowed: tuple[str, ...] | None = None
+    allow_censored: bool = False
     _regex: re.Pattern | None = field(default=None, repr=False, compare=False)
 
     def compile(self) -> "Rule":
@@ -85,9 +88,17 @@ def _coerce_rule(name: str, spec: Any) -> Rule:
             f"column {name!r}: unsupported dtype {dtype!r} "
             f"(expected one of {SUPPORTED_DTYPES})"
         )
-    unknown = set(spec) - {"dtype", "required", "pattern", "min", "max", "allowed"}
+    unknown = set(spec) - {
+        "dtype", "required", "pattern", "min", "max", "allowed", "allow_censored"
+    }
     if unknown:
         raise SchemaError(f"column {name!r}: unknown keys {sorted(unknown)}")
+
+    allow_censored = bool(spec.get("allow_censored", False))
+    if allow_censored and dtype not in ("int", "float"):
+        raise SchemaError(
+            f"column {name!r}: allow_censored only applies to int/float dtypes"
+        )
 
     min_v = spec.get("min")
     max_v = spec.get("max")
@@ -110,6 +121,7 @@ def _coerce_rule(name: str, spec: Any) -> Rule:
         min=min_v,
         max=max_v,
         allowed=allowed,
+        allow_censored=allow_censored,
     ).compile()
 
 

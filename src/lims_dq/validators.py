@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 
+from .censored import parse_censored
 from .schema import Rule, RuleSet
 from .report import ValidationError
 
@@ -120,6 +121,25 @@ def validate_dataframe(
                         )
                     )
                 continue
+            if rule.dtype in ("int", "float"):
+                censored = parse_censored(value)
+                if censored is not None:
+                    if rule.allow_censored:
+                        continue  # meaningful result, not an error
+                    errors.append(
+                        ValidationError(
+                            row=row_num,
+                            column=name,
+                            value=value if not pd.isna(value) else None,
+                            rule="dtype",
+                            message=(
+                                f"{value!r} looks like a detection-limit value; "
+                                f"set 'allow_censored': true on column {name!r} "
+                                "to accept it"
+                            ),
+                        )
+                    )
+                    continue
             dtype_problem = _check_dtype(rule, value)
             if dtype_problem is not None:
                 errors.append(

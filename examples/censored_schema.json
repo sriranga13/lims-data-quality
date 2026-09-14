@@ -1,0 +1,10 @@
+{
+  "name": "lims-export-censored",
+  "version": "1.0.0",
+  "columns": {
+    "sample_id": { "dtype": "string", "required": true, "pattern": "^SMP-[0-9]{6}$" },
+    "concentration": { "dtype": "float", "required": true, "min": 0.0, "max": 100.0, "allow_censored": true },
+    "unit": { "dtype": "string", "required": true, "allowed": ["mg/L", "ug/mL", "ng/uL"] },
+    "analyzed_at": { "dtype": "date", "required": false }
+  }
+}

@@ -101,3 +101,56 @@ def test_no_strict_ignores_extra_columns(files, tmp_path):
     assert main(["validate", str(data), "--schema", str(schema)]) == 1  # strict
     assert main(["validate", str(data), "--schema", str(schema),
                  "--no-strict"]) == 0
+
+
+INFER_CSV = (
+    "sample_id,concentration,unit\n"
+    "SMP-000001,12.5,mg/L\n"
+    "SMP-000002,0.5,ug/mL\n"
+    "SMP-000003,7.25,mg/L\n"
+)
+
+
+def test_infer_writes_schema(tmp_path, capsys):
+    data = tmp_path / "data.csv"
+    data.write_text(INFER_CSV, encoding="utf-8")
+    out = tmp_path / "schema.json"
+    assert main(["infer", str(data), "--out", str(out), "--name", "lab"]) == 0
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["name"] == "lab"
+    assert doc["columns"]["concentration"]["dtype"] == "float"
+    assert doc["columns"]["unit"]["allowed"] == ["mg/L", "ug/mL"]
+
+
+def test_infer_prints_to_stdout(tmp_path, capsys):
+    data = tmp_path / "data.csv"
+    data.write_text(INFER_CSV, encoding="utf-8")
+    assert main(["infer", str(data)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert "columns" in doc
+
+
+def test_max_errors_tolerates_bad_rows(files, capsys):
+    schema, _, bad = files
+    # bad.csv has 3+ errors; tolerating 10 still exits 0
+    assert main(["validate", str(bad), "--schema", str(schema),
+                 "--max-errors", "10"]) == 0
+
+
+def test_max_errors_fails_when_exceeded(files, capsys):
+    schema, _, bad = files
+    assert main(["validate", str(bad), "--schema", str(schema),
+                 "--max-errors", "1"]) == 1
+
+
+def test_max_errors_negative_is_usage_error(files, capsys):
+    schema, _, bad = files
+    assert main(["validate", str(bad), "--schema", str(schema),
+                 "--max-errors", "-1"]) == 2
+
+
+def test_quiet_suppresses_report(files, capsys):
+    schema, good, _ = files
+    assert main(["validate", str(good), "--schema", str(schema),
+                 "--quiet"]) == 0
+    assert capsys.readouterr().out == ""
