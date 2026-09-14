@@ -1,0 +1,36 @@
+{
+  "columns": {
+    "analyzed_at": {
+      "dtype": "date",
+      "required": false
+    },
+    "concentration": {
+      "dtype": "float",
+      "max": 100.0,
+      "min": 0.0,
+      "required": true
+    },
+    "replicates": {
+      "dtype": "int",
+      "max": 12,
+      "min": 1,
+      "required": false
+    },
+    "sample_id": {
+      "dtype": "string",
+      "pattern": "^SMP-[0-9]{6}$",
+      "required": true
+    },
+    "unit": {
+      "allowed": [
+        "mg/L",
+        "ug/mL",
+        "ng/uL"
+      ],
+      "dtype": "string",
+      "required": true
+    }
+  },
+  "name": "lims-export",
+  "version": "1.0.0"
+}
