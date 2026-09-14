@@ -1,3 +1,4 @@
+[![PyPI](https://img.shields.io/pypi/v/lims-data-quality.svg)](https://pypi.org/project/lims-data-quality/)
 # lims-data-quality
 
 Validate lab/LIMS data files before they hit your pipeline — schema checks, row-level error reports, audit trails.
