@@ -1,0 +1,6 @@
+sample_id,concentration,unit,analyzed_at,replicates
+SMP-000001,12.5,mg/L,2026-09-01,3
+SMP-000002,0.75,ug/mL,2026-09-02,2
+SMP-000003,45.0,mg/L,2026-09-03,
+BAD-ID,150.0,kg,not-a-date,0
+SMP-000005,,mg/L,2026-09-05,13
